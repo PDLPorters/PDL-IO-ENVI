@@ -1,8 +1,8 @@
 #!/usr/bin/perl
 
-# sample data: https://www.l3harrisgeospatial.com/Support/Self-Help-Tools/Tutorials
-# raster description: https://www.l3harrisgeospatial.com/docs/enviimagefiles.html
-# header description: https://www.l3harrisgeospatial.com/docs/enviheaderfiles.html
+# sample data: https://www.nv5geospatialsoftware.com/Support/Self-Help-Tools/Tutorials
+# raster description: https://www.nv5geospatialsoftware.com/docs/enviimagefiles.html
+# header description: https://www.nv5geospatialsoftware.com/docs/enviheaderfiles.html
 
 # This file is the first step of an ENVI file IO module
 # to be named PDL::IO::ENVI.  We read the header file
