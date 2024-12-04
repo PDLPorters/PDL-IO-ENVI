@@ -1,36 +1,57 @@
-#!/usr/bin/perl
-
-# sample data: https://www.nv5geospatialsoftware.com/Support/Self-Help-Tools/Tutorials
-# raster description: https://www.nv5geospatialsoftware.com/docs/enviimagefiles.html
-# header description: https://www.nv5geospatialsoftware.com/docs/enviheaderfiles.html
-
-# This file is the first step of an ENVI file IO module
-# to be named PDL::IO::ENVI.  We read the header file
-# corresponding to the input file, parse the keywords
-# values structures, and return a hash ref of the file.
-#
-# Then we can use readflex to read the data
-#
-# TODO
-#
-#   (1) verify that all required fields are present
-#   (2) parse map_info for pixel geolocation
-#       - handle keyword=value inside list
-#   (3) check that all sensor keywords are parsed
-#   (4) add support for offset/stride/count/reshape
-#   (5) implement writeenvi/wenvi routine
-#   (6) LATER: add support for complex data input, e.g. [2,S,L,B]
-#   (7) LATER: support unsigned long long
+package PDL::IO::ENVI;
 
 use strict;
-
-use PDL;
-use PDL::NiceSlice;
+use warnings;
+use PDL::LiteF;
 use PDL::IO::FlexRaw;
+use PDL::Exporter;
 use Config;
 
-my $verbose = 1;  # for diagnostics
-my $run_envi_main = 0;  # set to 1 for testing
+our @ISA = qw( PDL::Exporter );
+our @EXPORT_OK = qw( readenvi readenvi_hdr );
+our @EXPORT = @EXPORT_OK;
+our %EXPORT_TAGS = ( Func=>[@EXPORT_OK] );
+
+our $VERSION = "2.096";
+$VERSION = eval $VERSION;
+
+our $verbose = 0;  # for diagnostics
+
+=head1 NAME
+
+PDL::IO::ENVI - read ENVI data files into PDL
+
+=head1 SYNOPSIS
+
+  use PDL::IO::ENVI;
+  $pdl = readenvi("file.dat"); # implies there's a file.hdr next to it
+
+  $hdr = readenvi_hdr("file.hdr"); # available separately, used for testing
+
+=head1 DESCRIPTION
+
+Allows you to read ENVI data into an ndarray.
+
+=head1 FUNCTIONS
+
+=head2 readenvi_hdr
+
+=for ref
+
+Given the name of an ENVI file header, parses the header and returns
+a hash-ref.
+
+  TODO
+    (1) verify that all required fields are present
+    (2) parse map_info for pixel geolocation
+        - handle keyword=value inside list
+    (3) check that all sensor keywords are parsed
+    (4) add support for offset/stride/count/reshape
+    (5) implement writeenvi/wenvi routine
+    (6) LATER: add support for complex data input, e.g. [2,S,L,B]
+    (7) LATER: support unsigned long long
+
+=cut
 
 # This is a hash ref of the known/allowed keywords
 # in an ENVI header file.  While these are the current
@@ -126,24 +147,24 @@ $envi_data_types->[15] =      undef; # unsigned long64, not supported, longlong?
 # Takes one arg, an ENVI hdr filename and
 # returns a hash reference of the header data
 #
-sub _read_envihdr {
+sub readenvi_hdr {
    my $hdrname = $_[0];
    my $hdr = {};
 
    # an easy progress message
    if ($verbose>1) {
-      print STDERR "_read_envihdr: reading ENVI hdr data from '@_'\n";
-      print STDERR "_read_envihdr: required ENVI keywords are:\n";
+      print STDERR "readenvi_hdr: reading ENVI hdr data from '@_'\n";
+      print STDERR "readenvi_hdr: required ENVI keywords are:\n";
       print STDERR "  @{ [sort @$envi_required_keywords] }\n";
    }
 
    # open hdr file
    open my $hdrfile, '<', $hdrname
-      or barf "_read_envihdr: couldn't open '$hdrname' for reading: $!";
+      or barf "readenvi_hdr: couldn't open '$hdrname' for reading: $!";
    binmode $hdrfile;
 
    if ( eof($hdrfile) ) {
-      barf "_read_envihdr: WARNING '$hdrname' is empty, invalid ENVI format"
+      barf "readenvi_hdr: WARNING '$hdrname' is empty, invalid ENVI format"
    }
 
    ITEM:
@@ -151,7 +172,7 @@ sub _read_envihdr {
       # check for ENVI hdr start word on first line
       my $line = <$hdrfile>;
       if ($line !~ /^ENVI\r?$/) {
-         barf "_read_envihdr: '$hdrname' is not in ENVI hdr format"
+         barf "readenvi_hdr: '$hdrname' is not in ENVI hdr format"
       }
       $hdr->{ENVI} = 1;  # this marks this header as ENVI
 
@@ -173,11 +194,11 @@ sub _read_envihdr {
             # append to value string
             $val  .= " $line";  # need to keep whitespace for separation
             if ($line =~ /{/) {
-               barf "_read_envihdr: warning, found nested braces for line '$line'\n";
+               barf "readenvi_hdr: warning, found nested braces for line '$line'\n";
             }
             if ( $val =~ /}$/ ) { # got to end of list
                # parse $val list
-               print STDERR "_read_envihdr: got list value = $val\n" if $verbose>1;
+               print STDERR "readenvi_hdr: got list value = $val\n" if $verbose>1;
                # clear list parse flag
                $in_list--;
             }
@@ -188,7 +209,7 @@ sub _read_envihdr {
             if (defined $keyword) {
                # warning exit in case underscores are used in keywords
                if ($keyword =~ /_/) {
-                  barf "_read_envihdr: WARNING keyword '$keyword' contains underscore!"
+                  barf "readenvi_hdr: WARNING keyword '$keyword' contains underscore!"
                }
                # normalize to lc and single underscore for whitespace
                $keyword =~ s/\s+$//;
@@ -204,12 +225,12 @@ sub _read_envihdr {
                next LINE if $in_list>0;
 
                # parse ENVI hdr lists and convert to perl array ref
-               if ($val =~ /^{/) {
+               if ($val =~ /^{/) { # } vim gets confused
                   # strip off braces
                   $val =~ s/^{\s*//;
                   $val =~ s/\s*}$//;
                   my @listval = split ',\s*', $val;
-                  print STDERR "_read_envihdr: expanded $keyword list value to (@listval)\n" if $verbose;
+                  print STDERR "readenvi_hdr: expanded $keyword list value to (@listval)\n" if $verbose;
                   $val = [@listval];
                }
 
@@ -281,7 +302,7 @@ sub readenvi {
 
    print STDERR "readenvi: ERROR could not find ENVI hdr file\n" unless -r $envihdrname;
 
-   $envihdr = _read_envihdr($envihdrname);
+   $envihdr = readenvi_hdr($envihdrname);
 
    # add read of imbedded_header data if have header_offset non-zero
    if ($envihdr->{header_offset}) {
@@ -335,9 +356,14 @@ sub readenvi {
    return wantarray ? ($envi, $envihdr) : $envi;
 }
 
-if ($run_envi_main) {
-   my ($data,$hdr) = readenvi('envi-data');
-   print "Got " . $data->dims . " of data\n";
-}
+=head1 SEE ALSO
+
+Sample data: L<https://www.nv5geospatialsoftware.com/Support/Self-Help-Tools/Tutorials>
+
+Header description: L<https://www.nv5geospatialsoftware.com/docs/enviheaderfiles.html>
+
+Raster description: L<https://www.nv5geospatialsoftware.com/docs/enviimagefiles.html>
+
+=cut
 
 1;
